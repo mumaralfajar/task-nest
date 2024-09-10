@@ -6,8 +6,8 @@ import {
   Param,
   Delete,
   Query,
-  Put,
-} from '@nestjs/common';
+  Put, NotFoundException, BadRequestException
+} from "@nestjs/common";
 import { TasksService } from './tasks.service';
 import { Task } from './task.model';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -55,22 +55,12 @@ export class TasksController {
     example: 5,
     description: 'Number of tasks per page (default is 5)',
   })
-  getTasks(@Query('page') page = 1, @Query('size') size = 5) {
+  async getTasks(@Query('page') page = 1, @Query('size') size = 5) {
     try {
-      const { tasks, totalItems } = this.tasksService.getTasksWithPagination(
-        +page,
-        +size,
-      );
-      return createPaginatedResponse(
-        true,
-        'Tasks retrieved successfully',
-        +page,
-        +size,
-        totalItems,
-        tasks,
-      );
+      const { tasks, totalItems } = await this.tasksService.getTasksWithPagination(+page, +size);
+      return createPaginatedResponse(true, 'Tasks retrieved successfully', +page, +size, totalItems, tasks);
     } catch (error) {
-      console.log(error);
+      console.log(error.message);
       return createResponse(false, 'Failed to retrieve tasks', null);
     }
   }
@@ -83,13 +73,16 @@ export class TasksController {
     description: 'Task retrieved successfully.',
     ...taskResponseSchema,
   })
-  getTaskById(@Param('id') id: string): GeneralResponse<Task> {
+  async getTaskById(@Param('id') id: string): Promise<GeneralResponse<Task>> {
     try {
-      const task = this.tasksService.getTaskById(id);
+      const task = await this.tasksService.getTaskById(id);
+      if (!task) {
+        return createResponse(false, 'Task not found', null);
+      }
       return createResponse(true, 'Task retrieved successfully', task);
     } catch (error) {
-      console.log(error);
-      return createResponse(false, 'Task not found', null);
+      console.log('Error retrieving task:', error.message);
+      return createResponse(false, error.message, null);
     }
   }
 
@@ -100,13 +93,13 @@ export class TasksController {
     description: 'Task created successfully.',
     ...taskResponseSchema,
   })
-  createTask(@Body() createTaskDto: CreateTaskDto): GeneralResponse<Task> {
+  async createTask(@Body() createTaskDto: CreateTaskDto): Promise<GeneralResponse<Task>> {
     try {
       const { title, description } = createTaskDto;
-      const newTask = this.tasksService.createTask(title, description);
+      const newTask = await this.tasksService.createTask(title, description);
       return createResponse(true, 'Task created successfully', newTask);
     } catch (error) {
-      console.log(error);
+      console.log(error.message);
       return createResponse(false, 'Failed to create task', null);
     }
   }
@@ -123,17 +116,22 @@ export class TasksController {
     description: 'Task updated successfully.',
     ...taskResponseSchema,
   })
-  updateTask(
+  async updateTask(
     @Param('id') id: string,
     @Body() createTaskDto: CreateTaskDto,
-  ): GeneralResponse<Task> {
+  ): Promise<GeneralResponse<Task>> {
     try {
       const { title, description } = createTaskDto;
-      const updatedTask = this.tasksService.updateTask(id, title, description);
+      const updatedTask = await this.tasksService.updateTask(id, title, description);
       return createResponse(true, 'Task updated successfully', updatedTask);
     } catch (error) {
-      console.log(error);
-      return createResponse(false, 'Task not found', null);
+      console.log(error.message);
+
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        return createResponse(false, error.message, null);
+      }
+
+      return createResponse(false, 'Failed to update task', null);
     }
   }
 
@@ -149,13 +147,18 @@ export class TasksController {
     description: 'Task deleted successfully.',
     ...deleteResponseSchema,
   })
-  deleteTask(@Param('id') id: string): GeneralResponse<null> {
+  async deleteTask(@Param('id') id: string): Promise<GeneralResponse<null>> {
     try {
-      this.tasksService.deleteTask(id);
+      await this.tasksService.deleteTask(id);
       return createResponse(true, 'Task deleted successfully', null);
     } catch (error) {
-      console.log(error);
-      return createResponse(false, 'Task not found', null);
+      console.log(error.message);
+
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        return createResponse(false, error.message, null);
+      }
+
+      return createResponse(false, 'Failed to delete task', null);
     }
   }
 }
